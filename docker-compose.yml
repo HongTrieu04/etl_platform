@@ -25,7 +25,7 @@ x-airflow-common: &airflow_common
     MINIO_ENDPOINT: http://minio:9000
     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    ORACLE_HOST: oracle
+    ORACLE_HOST: ${ORACLE_HOST}
     ORACLE_PORT: 1521
     ORACLE_SERVICE_NAME: ${ORACLE_SERVICE_NAME}
     ORACLE_USERNAME: ${ORACLE_APP_USER}
@@ -40,27 +40,31 @@ x-airflow-common: &airflow_common
     - etl-network
 
 services:
-  oracle:
-    image: gvenzl/oracle-xe:21-slim
-    container_name: ${PROJECT_NAME}_oracle
-    environment:
-      TZ: ${TZ}
-      ORACLE_PASSWORD: ${ORACLE_PASSWORD}
-      APP_USER: ${ORACLE_APP_USER}
-      APP_USER_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
-    ports:
-      - ${ORACLE_PORT}:1521
-    volumes:
-      - oracle_data:/opt/oracle/oradata
-      - ./oracle/sql/init:/container-entrypoint-initdb.d:ro
-    healthcheck:
-      <<: *health_defaults
-      start_period: 120s
-      test:
-        - CMD-SHELL
-        - echo 'SELECT 1 FROM dual;' | sqlplus -s system/${ORACLE_PASSWORD}@localhost:1521/${ORACLE_SERVICE_NAME} >/dev/null || exit 1
-    networks:
-      - etl-network
+  # ------------------------------------------------------------------
+  # Oracle container DISABLED — connecting to external Oracle DB.
+  # Connection configured via ORACLE_HOST, ORACLE_PORT, etc. in .env
+  # ------------------------------------------------------------------
+  # oracle:
+  #   image: gvenzl/oracle-xe:21-slim
+  #   container_name: ${PROJECT_NAME}_oracle
+  #   environment:
+  #     TZ: ${TZ}
+  #     ORACLE_PASSWORD: ${ORACLE_PASSWORD}
+  #     APP_USER: ${ORACLE_APP_USER}
+  #     APP_USER_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
+  #   ports:
+  #     - ${ORACLE_PORT}:1521
+  #   volumes:
+  #     - oracle_data:/opt/oracle/oradata
+  #     - ./oracle/sql/init:/container-entrypoint-initdb.d:ro
+  #   healthcheck:
+  #     <<: *health_defaults
+  #     start_period: 120s
+  #     test:
+  #       - CMD-SHELL
+  #       - echo 'SELECT 1 FROM dual;' | sqlplus -s system/${ORACLE_PASSWORD}@localhost:1521/${ORACLE_SERVICE_NAME} >/dev/null || exit 1
+  #   networks:
+  #     - etl-network
 
   postgres:
     image: postgres:16-alpine
@@ -147,8 +151,6 @@ services:
       - ./logs/spark:/opt/spark/logs
       - ./data:/opt/spark/data
     depends_on:
-      oracle:
-        condition: service_healthy
       minio:
         condition: service_healthy
     healthcheck:
@@ -272,8 +274,8 @@ networks:
     driver: bridge
 
 volumes:
-  oracle_data:
-    name: ${PROJECT_NAME}_oracle_data
+  # oracle_data:                          # Disabled — using external Oracle DB
+  #   name: ${PROJECT_NAME}_oracle_data
   postgres_data:
     name: ${PROJECT_NAME}_postgres_data
   minio_data:
