@@ -37,6 +37,7 @@ x-airflow-common: &airflow_common
     - ./airflow/plugins:/opt/airflow/plugins
     - ./airflow/config:/opt/airflow/config
     - ./airflow/logs:/opt/airflow/logs
+    - ./spark/jobs:/opt/spark/jobs
   networks:
     - etl-network
 

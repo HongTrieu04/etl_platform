@@ -9,6 +9,9 @@ from typing import List, Dict, Any
 
 from pyspark.sql.functions import lit, current_timestamp
 
+import sys
+sys.path.append("/opt/spark")
+
 from jobs.utils.spark_session import build_spark
 from jobs.utils.cli_parser import parse_etl_args
 from jobs.utils.oracle_reader import OracleReader

@@ -5,6 +5,9 @@ Skeleton job for SOR Job B.
 import logging
 from pyspark.sql.functions import lit
 
+import sys
+sys.path.append("/opt/spark")
+
 from jobs.utils.spark_session import build_spark
 from jobs.utils.cli_parser import parse_etl_args
 from jobs.utils.minio_writer import write_parquet
