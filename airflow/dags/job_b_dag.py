@@ -1,7 +1,6 @@
-"""DAG: Oracle → Raw zone migration.
+"""DAG: Raw → SOR transformation for Job B.
 
-Schedule: Daily at 02:00
-Triggers extraction of Oracle source tables into MinIO raw zone.
+Schedule: None (triggered by ar_x_au DAG).
 """
 from datetime import datetime, timedelta
 
@@ -18,21 +17,21 @@ default_args = {
 }
 
 with DAG(
-    dag_id="migration_oracle_to_raw",
+    dag_id="sor_job_b",
     default_args=default_args,
-    description="Extract Oracle source tables into MinIO Raw zone (Parquet)",
-    schedule="0 2 * * *",
+    description="Transform Raw data into SOR (Job B) — triggered by ar_x_au",
+    schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,
-    tags=["migration", "oracle", "raw"],
+    tags=["sor", "job_b", "transformation"],
 ) as dag:
 
-    run_migration = SparkSubmitOperator(
-        task_id="spark_oracle_to_raw",
-        application="/opt/spark/jobs/migration/oracle_to_raw.py",
+    run_job_b = SparkSubmitOperator(
+        task_id="spark_job_b",
+        application="/opt/spark/jobs/sor/job_b.py",
         conn_id="spark_default",
         application_args=[
-            "--etl-date", "{{ ds_nodash }}",
+            "--etl-date", "{{ dag_run.conf.get('etl_date', ds_nodash) }}",
             "--run-type", "FULL",
         ],
         verbose=True,
