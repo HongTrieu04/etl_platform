@@ -4,6 +4,7 @@ Schedule: Daily at 03:00
 After completion, triggers Job B DAG.
 """
 from datetime import datetime, timedelta
+import socket
 
 from airflow import DAG
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -33,7 +34,7 @@ with DAG(
         application="/opt/spark/jobs/sor/ar_x_au.py",
         conn_id="spark_default",
         conf={
-            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.host": socket.gethostbyname(socket.gethostname()),
             "spark.driver.bindAddress": "0.0.0.0",
         },
         application_args=[

@@ -4,6 +4,7 @@ Schedule: Daily at 02:00
 Triggers extraction of Oracle source tables into MinIO raw zone.
 """
 from datetime import datetime, timedelta
+import socket
 
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
@@ -32,7 +33,7 @@ with DAG(
         application="/opt/spark/jobs/migration/oracle_to_raw.py",
         conn_id="spark_default",
         conf={
-            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.host": socket.gethostbyname(socket.gethostname()),
             "spark.driver.bindAddress": "0.0.0.0",
         },
         application_args=[
