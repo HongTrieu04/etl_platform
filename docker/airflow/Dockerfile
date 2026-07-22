@@ -14,4 +14,5 @@ RUN pip install --no-cache-dir \
     boto3 \
     pandas \
     pyarrow \
+    pyspark==3.5.1 \
     "apache-airflow-providers-apache-spark>=4.0,<5"
