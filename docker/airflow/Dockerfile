@@ -13,4 +13,5 @@ RUN pip install --no-cache-dir \
     oracledb==2.5.1 \
     boto3 \
     pandas \
-    pyarrow
+    pyarrow \
+    apache-airflow-providers-apache-spark>=4.0,<5
