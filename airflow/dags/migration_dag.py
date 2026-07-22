@@ -31,6 +31,10 @@ with DAG(
         task_id="spark_oracle_to_raw",
         application="/opt/spark/jobs/migration/oracle_to_raw.py",
         conn_id="spark_default",
+        conf={
+            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.bindAddress": "0.0.0.0",
+        },
         application_args=[
             "--etl-date", "{{ ds_nodash }}",
             "--run-type", "FULL",

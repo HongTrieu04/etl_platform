@@ -32,6 +32,10 @@ with DAG(
         task_id="spark_ar_x_au",
         application="/opt/spark/jobs/sor/ar_x_au.py",
         conn_id="spark_default",
+        conf={
+            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.bindAddress": "0.0.0.0",
+        },
         application_args=[
             "--etl-date", "{{ ds_nodash }}",
             "--run-type", "FULL",
