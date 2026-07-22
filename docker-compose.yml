@@ -31,7 +31,7 @@ x-airflow-common: &airflow_common
     ORACLE_USERNAME: ${ORACLE_APP_USER}
     ORACLE_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
     SPARK_MASTER_URL: spark://spark-master:7077
-    AIRFLOW_CONN_SPARK_DEFAULT: spark://spark-master:7077
+    AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/plugins:/opt/airflow/plugins
