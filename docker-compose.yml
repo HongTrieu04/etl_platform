@@ -1,0 +1,281 @@
+name: ${PROJECT_NAME}
+
+x-health-defaults: &health_defaults
+  interval: 20s
+  timeout: 10s
+  retries: 10
+  start_period: 20s
+
+x-airflow-common: &airflow_common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: etl/airflow:local
+  environment:
+    TZ: ${TZ}
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW_UID: ${AIRFLOW_UID}
+    PYTHONPATH: /opt/airflow
+    MINIO_ENDPOINT: http://minio:9000
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ORACLE_HOST: oracle
+    ORACLE_PORT: 1521
+    ORACLE_SERVICE_NAME: ${ORACLE_SERVICE_NAME}
+    ORACLE_USERNAME: ${ORACLE_APP_USER}
+    ORACLE_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
+    SPARK_MASTER_URL: spark://spark-master:7077
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/logs:/opt/airflow/logs
+  networks:
+    - etl-network
+
+services:
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: ${PROJECT_NAME}_oracle
+    environment:
+      TZ: ${TZ}
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD}
+      APP_USER: ${ORACLE_APP_USER}
+      APP_USER_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
+    ports:
+      - ${ORACLE_PORT}:1521
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./oracle/sql/init:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      <<: *health_defaults
+      start_period: 120s
+      test:
+        - CMD-SHELL
+        - echo 'SELECT 1 FROM dual;' | sqlplus -s system/${ORACLE_PASSWORD}@localhost:1521/${ORACLE_SERVICE_NAME} >/dev/null || exit 1
+    networks:
+      - etl-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${PROJECT_NAME}_postgres
+    environment:
+      TZ: ${TZ}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - ${POSTGRES_PORT}:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1
+    networks:
+      - etl-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: ${PROJECT_NAME}_minio
+    environment:
+      TZ: ${TZ}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address :9001
+    ports:
+      - ${MINIO_API_PORT}:9000
+      - ${MINIO_CONSOLE_PORT}:9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:9000/minio/health/live || exit 1
+    networks:
+      - etl-network
+
+  minio-mc:
+    image: minio/mc:latest
+    container_name: ${PROJECT_NAME}_minio_mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/minio/init/init-buckets.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKETS: ${MINIO_BUCKETS}
+    volumes:
+      - ./minio/init:/minio/init:ro
+    restart: "no"
+    networks:
+      - etl-network
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    image: etl/spark:local
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+    container_name: ${PROJECT_NAME}_spark_master
+    environment:
+      TZ: ${TZ}
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8080
+      SPARK_LOG_LEVEL: INFO
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - ${SPARK_MASTER_PORT}:7077
+      - ${SPARK_MASTER_UI_PORT}:8080
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+      - ./spark/shared:/opt/spark/shared
+      - ./spark/config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./spark/config/log4j2.properties:/opt/spark/conf/log4j2.properties
+      - ./logs/spark:/opt/spark/logs
+      - ./data:/opt/spark/data
+    depends_on:
+      oracle:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:8080 || exit 1
+    networks:
+      - etl-network
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    image: etl/spark:local
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - --cores
+      - ${SPARK_WORKER_CORES}
+      - --memory
+      - ${SPARK_WORKER_MEMORY}
+      - --webui-port
+      - ${SPARK_WORKER_UI_PORT}
+      - spark://spark-master:7077
+    environment:
+      TZ: ${TZ}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY}
+      SPARK_LOG_LEVEL: INFO
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - ${SPARK_WORKER_UI_PORT}:8081
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+      - ./spark/shared:/opt/spark/shared
+      - ./spark/config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./spark/config/log4j2.properties:/opt/spark/conf/log4j2.properties
+      - ./logs/spark:/opt/spark/logs
+      - ./data:/opt/spark/data
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:8081 || exit 1
+    networks:
+      - etl-network
+
+  airflow-init:
+    <<: *airflow_common
+    container_name: ${PROJECT_NAME}_airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate && \
+        airflow users create \
+          --role Admin \
+          --username ${AIRFLOW_ADMIN_USERNAME} \
+          --password ${AIRFLOW_ADMIN_PASSWORD} \
+          --firstname ${AIRFLOW_ADMIN_FIRSTNAME} \
+          --lastname ${AIRFLOW_ADMIN_LASTNAME} \
+          --email ${AIRFLOW_ADMIN_EMAIL} || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow_common
+    container_name: ${PROJECT_NAME}_airflow_webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: webserver
+    ports:
+      - ${AIRFLOW_WEB_PORT}:8080
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:8080/health || exit 1
+
+  airflow-scheduler:
+    <<: *airflow_common
+    container_name: ${PROJECT_NAME}_airflow_scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}" || exit 1
+
+  airflow-triggerer:
+    <<: *airflow_common
+    container_name: ${PROJECT_NAME}_airflow_triggerer
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: triggerer
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}" || exit 1
+
+networks:
+  etl-network:
+    name: ${PROJECT_NAME}_network
+    driver: bridge
+
+volumes:
+  oracle_data:
+    name: ${PROJECT_NAME}_oracle_data
+  postgres_data:
+    name: ${PROJECT_NAME}_postgres_data
+  minio_data:
+    name: ${PROJECT_NAME}_minio_data
+
