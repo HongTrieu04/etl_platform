@@ -56,21 +56,24 @@ def function_hash02(prefix: str, col_expr):
 
 
 def dataframe_checksum(df: DataFrame, columns: List[str]) -> str:
-    """Compute an aggregate checksum for the entire DataFrame.
-
-    Hashes each row, then XORs/concatenates for a single summary value.
+    """Compute an aggregate checksum for the entire DataFrame in a memory-safe, distributed way.
 
     Args:
         df: Input DataFrame.
         columns: Columns to include in the per-row hash.
 
     Returns:
-        Single hex string representing the aggregate checksum.
+        Deterministic SHA-256 checksum string.
     """
-    hashed_df = hash_columns(df, columns, output_col="_row_hash_")
-    result = hashed_df.agg(
-        F.sha2(F.concat_ws("|", F.sort_array(F.collect_list("_row_hash_"))), 256).alias("checksum")
-    ).collect()[0]["checksum"]
+    hashed_df = hash_columns(df, columns, output_col="_row_hash_", algorithm="md5")
+    # Convert first 15 hex characters of MD5 to BigInt number and sum distributedly
+    num_col = F.conv(F.substring(F.col("_row_hash_"), 1, 15), 16, 10).cast("decimal(38,0)")
+    
+    row_count = df.count()
+    sum_val = hashed_df.select(F.sum(num_col)).collect()[0][0] or 0
+    
+    checksum_str = f"cnt:{row_count}|sum:{sum_val}"
+    result = hashed_df.select(F.sha2(F.lit(checksum_str), 256)).collect()[0][0]
 
-    logger.info("DataFrame checksum (over %d columns): %s", len(columns), result)
+    logger.info("DataFrame checksum (over %d columns, %d rows): %s", len(columns), row_count, result)
     return result or ""
