@@ -7,10 +7,8 @@ x-health-defaults: &health_defaults
   start_period: 20s
 
 x-airflow-common: &airflow_common
-  build:
-    context: .
-    dockerfile: docker/airflow/Dockerfile
   image: etl/airflow:local
+  pull_policy: never
   environment:
     TZ: ${TZ}
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -28,8 +26,8 @@ x-airflow-common: &airflow_common
     ORACLE_HOST: ${ORACLE_HOST}
     ORACLE_PORT: 1521
     ORACLE_SERVICE_NAME: ${ORACLE_SERVICE_NAME}
-    ORACLE_USERNAME: ${ORACLE_APP_USER}
-    ORACLE_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
+    ORACLE_APP_USER: ${ORACLE_APP_USER}
+    ORACLE_APP_USER_PASSWORD: ${ORACLE_APP_USER_PASSWORD}
     SPARK_MASTER_URL: spark://spark-master:7077
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
   volumes:
@@ -127,6 +125,7 @@ services:
       - etl-network
 
   spark-master:
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/spark/Dockerfile
@@ -169,10 +168,8 @@ services:
       - etl-network
 
   spark-worker:
-    build:
-      context: .
-      dockerfile: docker/spark/Dockerfile
     image: etl/spark:local
+    pull_policy: never
     command:
       - /opt/spark/bin/spark-class
       - org.apache.spark.deploy.worker.Worker
@@ -217,6 +214,10 @@ services:
 
   airflow-init:
     <<: *airflow_common
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
     container_name: ${PROJECT_NAME}_airflow_init
     depends_on:
       postgres:

@@ -45,6 +45,16 @@ def hash_columns(
     return df.withColumn(output_col, hash_expr)
 
 
+def function_hash02(prefix: str, col_expr):
+    """Simulate Oracle FUNCTION_HASH02(prefix, value).
+
+    Concatenates prefix string with the column expression value and computes SHA-256 hash.
+    """
+    val_str = F.coalesce(col_expr.cast("string"), F.lit(""))
+    return F.sha2(F.concat(F.lit(prefix), val_str), 256)
+
+
+
 def dataframe_checksum(df: DataFrame, columns: List[str]) -> str:
     """Compute an aggregate checksum for the entire DataFrame.
 

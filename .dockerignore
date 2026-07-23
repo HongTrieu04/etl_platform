@@ -1,0 +1,10 @@
+.git
+.env
+logs/
+data/
+minio/
+airflow/logs/
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd

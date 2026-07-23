@@ -26,7 +26,17 @@ class OracleReader:
         self._user = os.getenv("ORACLE_APP_USER", "")
         self._password = os.getenv("ORACLE_APP_USER_PASSWORD", "")
         self._jdbc_url = f"jdbc:oracle:thin:@//{self._host}:{self._port}/{self._service}"
-        logger.info("OracleReader initialized → %s (user=%s)", self._jdbc_url, self._user)
+
+        # Debug: log connection parameters (mask password)
+        masked_pw = f"{self._password[:2]}***" if len(self._password) > 2 else ("(empty)" if not self._password else "***")
+        logger.info("OracleReader initialized → %s (user=%s, password=%s)", self._jdbc_url, self._user, masked_pw)
+
+        if not self._user or not self._password:
+            logger.error(
+                "Oracle credentials are empty! ORACLE_APP_USER=%r, ORACLE_APP_USER_PASSWORD is %s. "
+                "Check that these environment variables are set in docker-compose.yml and .env",
+                self._user, "set" if self._password else "EMPTY"
+            )
 
     @property
     def jdbc_url(self) -> str:

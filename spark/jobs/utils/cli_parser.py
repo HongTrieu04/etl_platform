@@ -11,6 +11,7 @@ class ETLArgs(NamedTuple):
     """Parsed ETL job arguments."""
     etl_date: str       # format YYYYMMDD
     run_type: str       # FULL or DELTA
+    blocks: str         # e.g. "7,8" or "all"
 
 
 def parse_etl_args(description: str = "ETL Spark Job") -> ETLArgs:
@@ -20,7 +21,7 @@ def parse_etl_args(description: str = "ETL Spark Job") -> ETLArgs:
         description: Description shown in --help output.
 
     Returns:
-        ETLArgs with etl_date and run_type.
+        ETLArgs with etl_date, run_type, and blocks.
     """
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
@@ -36,8 +37,14 @@ def parse_etl_args(description: str = "ETL Spark Job") -> ETLArgs:
         default="FULL",
         help="Run type: FULL or DELTA (default: FULL).",
     )
+    parser.add_argument(
+        "--blocks",
+        type=str,
+        default="all",
+        help="Comma-separated list of blocks to run, e.g. '7,8' or '7' (default: all).",
+    )
 
     args = parser.parse_args()
-    result = ETLArgs(etl_date=args.etl_date, run_type=args.run_type)
-    logger.info("ETL args → etl_date=%s, run_type=%s", result.etl_date, result.run_type)
+    result = ETLArgs(etl_date=args.etl_date, run_type=args.run_type, blocks=args.blocks)
+    logger.info("ETL args → etl_date=%s, run_type=%s, blocks=%s", result.etl_date, result.run_type, result.blocks)
     return result
