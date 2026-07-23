@@ -9,7 +9,6 @@ from typing import List
 from pyspark.sql import Row
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col, current_timestamp, lit
-from pyspark.sql.types import StringType, StructField, StructType
 
 sys.path.append("/opt/spark")
 
@@ -107,19 +106,25 @@ def main() -> None:
             DETAILS=f"Missing Columns: {list(missing_cols)}" if missing_cols else "Schema matches 100%"
         ))
 
-        # 3. Create Summary DataFrame with explicit schema
-        summary_schema = StructType([
-            StructField("CHECK_NAME", StringType(), True),
-            StructField("STATUS", StringType(), True),
-            StructField("DETAILS", StringType(), True),
-        ])
-        df_summary = spark.createDataFrame(results, schema=summary_schema)
-        df_summary = df_summary.withColumn("CHECK_TIMESTAMP", current_timestamp())
+        # 3. Create Summary DataFrame using native Catalyst SQL expressions
+        summary_dfs = []
+        for r in results:
+            row_df = spark.range(1).select(
+                lit(r.CHECK_NAME).alias("CHECK_NAME"),
+                lit(r.STATUS).alias("STATUS"),
+                lit(r.DETAILS).alias("DETAILS"),
+                current_timestamp().alias("CHECK_TIMESTAMP"),
+            )
+            summary_dfs.append(row_df)
 
-        # Log results
+        df_summary = summary_dfs[0]
+        for df_sub in summary_dfs[1:]:
+            df_summary = df_summary.union(df_sub)
+
+        # Log results directly from Python list
         logger.info("Reconciliation Results Summary:")
-        for row in df_summary.collect():
-            logger.info(f"[{row.STATUS}] {row.CHECK_NAME}: {row.DETAILS}")
+        for r in results:
+            logger.info(f"[{r.STATUS}] {r.CHECK_NAME}: {r.DETAILS}")
 
         # 4. Write to Reconcile Zone
         output_path = f"{SOR_AR_X_AU}/"
