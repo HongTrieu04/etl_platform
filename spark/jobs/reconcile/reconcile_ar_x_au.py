@@ -9,13 +9,14 @@ from typing import List
 from pyspark.sql import Row
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col, current_timestamp, lit
+from pyspark.sql.types import StringType, StructField, StructType
 
 sys.path.append("/opt/spark")
 
 from jobs.common.constants import SOR_AR_X_AU, TABLE_FBM_TDY, TABLE_GAM_TDY
 from jobs.config.job_config import JobConfig
 from jobs.utils.cli_parser import parse_etl_args
-from jobs.utils.hash_function import dataframe_checksum, function_hash02
+from jobs.utils.hash_function import dataframe_checksum
 from jobs.utils.minio_writer import write_parquet
 from jobs.utils.spark_session import build_spark
 
@@ -43,9 +44,8 @@ def main() -> None:
         logger.info(f"Reading target data from MinIO SOR: {sor_path}")
         df_sor = spark.read.parquet(sor_path)
 
-        # 2. Read Source Data from MinIO Raw (GAM & FBM)
+        # 2. Read Source Data from MinIO Raw (GAM)
         gam_path = f"s3a://{raw_bucket}/{TABLE_GAM_TDY}/"
-        fbm_path = f"s3a://{raw_bucket}/{TABLE_FBM_TDY}/"
         logger.info(f"Reading raw GAM data from {gam_path}")
         df_raw_gam = spark.read.parquet(gam_path)
 
@@ -61,8 +61,7 @@ def main() -> None:
         results.append(Row(
             CHECK_NAME="Row Count",
             STATUS=status,
-            DETAILS=f"Raw GAM Valid Rows: {count_gam}, SOR Rows: {count_sor}",
-            CHECK_TIMESTAMP=None
+            DETAILS=f"Raw GAM Valid Rows: {count_gam}, SOR Rows: {count_sor}"
         ))
 
         # Check 2: Duplicate Key (AR_ID + AU_ID)
@@ -76,8 +75,7 @@ def main() -> None:
         results.append(Row(
             CHECK_NAME="Duplicate Key",
             STATUS=status,
-            DETAILS=f"Found {duplicate_count} duplicate (AR_ID, AU_ID) pairs in SOR",
-            CHECK_TIMESTAMP=None
+            DETAILS=f"Found {duplicate_count} duplicate (AR_ID, AU_ID) pairs in SOR"
         ))
 
         # Check 3: Null Key Check (AR_ID or AU_ID null)
@@ -86,8 +84,7 @@ def main() -> None:
         results.append(Row(
             CHECK_NAME="Null Key",
             STATUS=status,
-            DETAILS=f"Found {null_count} records with null AR_ID or AU_ID",
-            CHECK_TIMESTAMP=None
+            DETAILS=f"Found {null_count} records with null AR_ID or AU_ID"
         ))
 
         # Check 4: Hash Checksum
@@ -96,8 +93,7 @@ def main() -> None:
         results.append(Row(
             CHECK_NAME="Hash Checksum",
             STATUS=status,
-            DETAILS=f"SOR Checksum: {sor_hash}",
-            CHECK_TIMESTAMP=None
+            DETAILS=f"SOR Checksum: {sor_hash}"
         ))
 
         # Check 5: Schema Validation
@@ -108,12 +104,16 @@ def main() -> None:
         results.append(Row(
             CHECK_NAME="Schema Validation",
             STATUS=status,
-            DETAILS=f"Missing Columns: {list(missing_cols)}" if missing_cols else "Schema matches 100%",
-            CHECK_TIMESTAMP=None
+            DETAILS=f"Missing Columns: {list(missing_cols)}" if missing_cols else "Schema matches 100%"
         ))
 
-        # 3. Create Summary DataFrame
-        df_summary = spark.createDataFrame(results)
+        # 3. Create Summary DataFrame with explicit schema
+        summary_schema = StructType([
+            StructField("CHECK_NAME", StringType(), True),
+            StructField("STATUS", StringType(), True),
+            StructField("DETAILS", StringType(), True),
+        ])
+        df_summary = spark.createDataFrame(results, schema=summary_schema)
         df_summary = df_summary.withColumn("CHECK_TIMESTAMP", current_timestamp())
 
         # Log results
